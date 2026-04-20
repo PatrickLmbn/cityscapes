@@ -71,7 +71,7 @@ function App() {
       // Fallback
       const saved = localStorage.getItem('cityscapes-buildings');
       if (saved) {
-        try { setBuildings(JSON.parse(saved)); } catch (e) { console.error(e); }
+        try { setBuildings(JSON.parse(saved)); } catch (e) { /* ignore parse error */ }
       }
     }
 
@@ -108,8 +108,6 @@ function App() {
         const { error } = await supabase
           .from('buildings')
           .insert([newBuilding]);
-
-        if (error) console.error("Supabase insert error:", error);
       }
 
       setBuildings(prev => [...prev, newBuilding]);
@@ -119,8 +117,6 @@ function App() {
         setRateMsg(err.message);
         setInputValue(text); // restore so user doesn't lose their thought
         setTimeout(() => setRateMsg(null), (err.waitSec + 1) * 1000);
-      } else {
-        console.error('Failed to create building:', err);
       }
     } finally {
       setIsAnalyzing(false);
@@ -157,10 +153,16 @@ function App() {
         setTokenCount(getRateLimitStatus().tokens);
       }
     } catch (err) {
-      console.error("Failed to post comment:", err);
+      // failed to post comment
     } finally {
       setIsPostingComment(false);
     }
+  };
+
+  const getCommentSense = (val) => {
+    if (val >= 8) return { label: 'Hopes', color: '#ffffff' };
+    if (val <= 3) return { label: 'Rage', color: '#ff2233' };
+    return { label: 'neutral', color: 'rgba(255,255,255,0.4)' };
   };
 
   const timeAgo = (ts) => {
@@ -245,7 +247,12 @@ function App() {
                 ) : (
                   activeComments.map(c => (
                     <div key={c.id} className="thread-item">
-                      <div className="thread-time">{timeAgo(c.timestamp)}</div>
+                      <div className="thread-meta">
+                        <span className="thread-time">{timeAgo(c.timestamp)}</span>
+                        <span className="thread-sense" style={{ color: getCommentSense(c.valence).color }}>
+                          {getCommentSense(c.valence).label}
+                        </span>
+                      </div>
                       <div className="thread-text">{c.text}</div>
                     </div>
                   ))
@@ -324,7 +331,7 @@ function App() {
             </button>
           </form>
 
-          <div className="token-counter" title="Remaining thoughts allowed in this window">
+          <div className="token-counter" title={`Visitor ID: ${getRateLimitStatus().visitorId || 'Loading...'}\nYour limit persists across refreshes.`}>
             <Zap size={14} />
             <span>{tokenCount}</span>
           </div>

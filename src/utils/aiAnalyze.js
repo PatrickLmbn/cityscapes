@@ -44,7 +44,6 @@ async function syncTokens(delta = 0) {
     .single();
 
   if (error && error.code !== 'PGRST116') {
-    console.warn('[AI Rate Limit] Sync error:', error);
   }
 
   let currentTokens = tokens;
@@ -53,11 +52,16 @@ async function syncTokens(delta = 0) {
   if (data) {
     currentTokens = typeof data.tokens === 'number' ? data.tokens : currentTokens;
     currentRefill = data.last_refill ? Number(data.last_refill) : currentRefill;
-    console.log(`[AI Rate Limit] Sync from DB: ${currentTokens} tokens (ID: ${visitorId.slice(0,8)}...)`);
   }
 
   // Refill tokens based on elapsed time since DB's last refill
   const now     = Date.now();
+  
+  // Safety: If DB time is in the future, reset it to now
+  if (currentRefill > now) {
+    currentRefill = now;
+  }
+
   const elapsed = Math.max(0, now - currentRefill);
   const gained  = Math.floor(elapsed / REFILL_MS);
   
@@ -78,7 +82,7 @@ async function syncTokens(delta = 0) {
         last_refill: currentRefill,
         updated_at: new Date().toISOString()
       });
-      if (upsertError) console.warn('[AI Rate Limit] Save error:', upsertError);
+      if (upsertError) { /* save error handled silenty */ }
     }
 
     // Update local state and localStorage for immediate persistence
@@ -87,7 +91,7 @@ async function syncTokens(delta = 0) {
     localStorage.setItem('cityscapes-tokens', currentTokens);
     localStorage.setItem('cityscapes-last-refill', currentRefill);
   } catch (err) {
-    console.error('[AI Rate Limit] Fatal sync error:', err);
+    /* fatal sync error handled silenty */
   }
 }
 
@@ -125,7 +129,7 @@ export function getRateLimitStatus() {
   const elapsed = now - lastRefill;
   const gained  = Math.floor(elapsed / REFILL_MS);
   const current = Math.min(RATE_LIMIT, tokens + gained);
-  return { tokens: current, max: RATE_LIMIT };
+  return { tokens: current, max: RATE_LIMIT, visitorId: getVisitorId() };
 }
 
 /**
@@ -134,8 +138,11 @@ export function getRateLimitStatus() {
 export async function initRateLimit() {
   await syncTokens(0);
   const status = getRateLimitStatus();
-  console.log('[AI Rate Limit] Initialized:', status);
-  return status;
+  return { ...status, visitorId: getVisitorId() };
+}
+
+export function getCurrentVisitorId() {
+  return getVisitorId();
 }
 
 /**
@@ -185,7 +192,6 @@ Respond ONLY with the JSON object. No explanation, no markdown, no code block.
 
     return buildFromAnalysis(text, parsed, buildingCount);
   } catch (err) {
-    console.error('AI analysis failed, using fallback:', err);
     return buildFallback(text);
   }
 }
@@ -237,7 +243,6 @@ Respond with ONLY JSON. No explanation.
     const cleaned = raw.replace(/```json|```/g, '').trim();
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error('Comment analysis failed:', err);
     return { valence: 5, intensity: 5 };
   }
 }
