@@ -1,0 +1,315 @@
+import React, { useState, useEffect } from 'react';
+import { MessageSquare, Send, Loader2, MousePointer2, ZoomIn, Hand, HelpCircle, X, Zap, Heart, Layers, AlertCircle } from 'lucide-react';
+import CityScene from './components/CityScene';
+import { analyzeThought, getRateLimitStatus, analyzeComment } from './utils/aiAnalyze';
+import { supabase } from './utils/supabase';
+
+const COLOR_LEGEND = [
+  { theme: 'Ambition',  color: '#ffc947', reason: 'Gold = wealth, power, achievement. The color of trophies and success.' },
+  { theme: 'Joy',       color: '#00ffcc', reason: 'Electric cyan = alive and energetic. The feeling of a cool breeze on a clear day.' },
+  { theme: 'Love',      color: '#ff79a8', reason: 'Soft red = intimate and warm. Not aggressive, but deeply connected to passion.' },
+  { theme: 'Peace',     color: '#88ffbb', reason: 'Soft green = nature, growth, safety. Used in meditation to reduce tension.' },
+  { theme: 'Nostalgia', color: '#ff9944', reason: 'Amber = old photographs, warm bulbs, sunsets. The color of the past.' },
+  { theme: 'Anxiety',   color: '#aa44ff', reason: 'Purple = tension between red (danger) and blue (sadness). Unease.' },
+  { theme: 'Sadness',   color: '#3a6ea8', reason: 'Muted blue = "feeling blue." Desaturated cool tones signal melancholy.' },
+  { theme: 'Fear',      color: '#ff6600', reason: 'Orange = warning signs & hazard tape. Dread and suspense, not outright danger.' },
+  { theme: 'Rage',      color: '#ff2233', reason: 'Bright red = raises heart rate, signals immediate danger. "Seeing red."' },
+  { theme: 'Hate',      color: '#cc0011', reason: 'Dark cold red = sustained, not explosive. Hate lingers like dried blood.' },
+];
+
+function App() {
+  const [buildings, setBuildings]     = useState([]);
+  const [inputValue, setInputValue]   = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showHint, setShowHint]       = useState(true);
+  const [showLegend, setShowLegend]   = useState(false);
+  const [selected, setSelected]       = useState(null);
+  const [rateMsg, setRateMsg]         = useState(null);
+  const [tokenCount, setTokenCount]   = useState(getRateLimitStatus().tokens);
+  const [comments, setComments]       = useState([]);
+  const [commentInput, setCommentInput] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+
+  // Auto-hide controls hint after 6 s
+  useEffect(() => {
+    const t = setTimeout(() => setShowHint(false), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Filter comments for the selected building in the UI
+  const activeComments = comments.filter(c => c.building_id === selected?.id);
+  
+  // Fetch comments logic removed from local useEffect, handled by global comments prop now
+  // (We'll just rely on the prop 'comments' filtered above)
+
+
+  // Load city on mount
+  useEffect(() => {
+    async function loadData() {
+      if (supabase) {
+        // Fetch All Buildings
+        const { data: bData } = await supabase
+          .from('buildings')
+          .select('*')
+          .order('timestamp', { ascending: true });
+        
+        if (bData) setBuildings(bData);
+
+        // Fetch All Comments
+        const { data: cData } = await supabase
+          .from('comments')
+          .select('*')
+          .order('timestamp', { ascending: true });
+        
+        if (cData) setComments(cData);
+        return;
+      }
+
+      // Fallback
+      const saved = localStorage.getItem('cityscapes-buildings');
+      if (saved) {
+        try { setBuildings(JSON.parse(saved)); } catch (e) { console.error(e); }
+      }
+    }
+    
+    loadData();
+  }, []);
+
+  // Persist city to local storage
+  useEffect(() => {
+    if (buildings.length > 0) {
+      localStorage.setItem('cityscapes-buildings', JSON.stringify(buildings));
+    }
+  }, [buildings]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isAnalyzing) return;
+    const text = inputValue.trim();
+    setInputValue('');
+    setIsAnalyzing(true);
+    try {
+      const newBuilding = await analyzeThought(text);
+      
+      // Save to Supabase if available
+      if (supabase) {
+        const { error } = await supabase
+          .from('buildings')
+          .insert([newBuilding]);
+        
+        if (error) console.error("Supabase insert error:", error);
+      }
+
+      setBuildings(prev => [...prev, newBuilding]);
+      setTokenCount(getRateLimitStatus().tokens);
+    } catch (err) {
+      if (err.name === 'RateLimitError') {
+        setRateMsg(err.message);
+        setInputValue(text); // restore so user doesn't lose their thought
+        setTimeout(() => setRateMsg(null), (err.waitSec + 1) * 1000);
+      } else {
+        console.error('Failed to create building:', err);
+      }
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handlePostComment = async (e) => {
+    e.preventDefault();
+    if (!commentInput.trim() || isPostingComment || !supabase || !selected) return;
+
+    const text = commentInput.trim();
+    setCommentInput('');
+    setIsPostingComment(true);
+
+    try {
+      // Analyze sentiment of the reply
+      const sentiment = await analyzeComment(text);
+
+      const newComment = {
+        building_id: selected.id,
+        text,
+        valence: sentiment.valence,
+        intensity: sentiment.intensity,
+        timestamp: Date.now()
+      };
+
+      const { data, error } = await supabase
+        .from('comments')
+        .insert([newComment])
+        .select();
+      
+      if (!error && data) {
+        setComments(prev => [...prev, ...data]);
+      }
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const timeAgo = (ts) => {
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60)   return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+
+  return (
+    <>
+      <div className="ui-overlay">
+        <div className="brand">CITYVOID</div>
+
+        {/* Controls hint */}
+        <div className={`controls-hint ${showHint ? 'visible' : ''}`}>
+          <div className="hint-item"><MousePointer2 size={13} /> Drag to rotate</div>
+          <div className="hint-item"><Hand size={13} /> Right-drag to pan</div>
+          <div className="hint-item"><ZoomIn size={13} /> Scroll to zoom</div>
+        </div>
+
+        {/* Rate limit toast */}
+        {rateMsg && (
+          <div className="rate-toast">
+            <AlertCircle size={14} />
+            <span>{rateMsg}</span>
+          </div>
+        )}
+
+        {/* Building detail card */}
+        {selected && (
+          <div className="detail-card" style={{ '--card-color': selected.windowColor }}>
+            <button className="detail-close" onClick={() => setSelected(null)}>
+              <X size={15} />
+            </button>
+
+            <div className="detail-label" style={{ color: selected.windowColor }}>
+              {selected.label}
+            </div>
+            <span className="detail-theme-badge" style={{ borderColor: selected.windowColor + '66', color: selected.windowColor }}>
+              {selected.theme}
+            </span>
+
+            <p className="detail-text">"{selected.text}"</p>
+
+            <div className="detail-stats">
+              <div className="detail-stat">
+                <Zap size={11} style={{ color: selected.windowColor }} />
+                <span>Intensity</span>
+                <div className="stat-bar">
+                  <div className="stat-fill" style={{ width: `${selected.intensity * 10}%`, background: selected.windowColor }} />
+                </div>
+                <span className="stat-val">{selected.intensity}/10</span>
+              </div>
+              <div className="detail-stat">
+                <Heart size={11} style={{ color: selected.windowColor }} />
+                <span>Positivity</span>
+                <div className="stat-bar">
+                  <div className="stat-fill" style={{ width: `${selected.valence * 10}%`, background: selected.windowColor }} />
+                </div>
+                <span className="stat-val">{selected.valence}/10</span>
+              </div>
+              <div className="detail-stat detail-stat--inline">
+                <Layers size={11} style={{ color: selected.windowColor }} />
+                <span>{selected.floors} floors · {timeAgo(selected.timestamp)}</span>
+              </div>
+            </div>
+
+            <div className="thread-section">
+              <div className="thread-header">Thread</div>
+              <div className="thread-list">
+                {activeComments.length === 0 ? (
+                  <div className="thread-empty">No responses yet. Be the first to echo.</div>
+                ) : (
+                  activeComments.map(c => (
+                    <div key={c.id} className="thread-item">
+                      <div className="thread-time">{timeAgo(c.timestamp)}</div>
+                      <div className="thread-text">{c.text}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <form className="thread-form" onSubmit={handlePostComment}>
+                <input 
+                  className="thread-input"
+                  placeholder="Reply to this thought..."
+                  value={commentInput}
+                  onChange={e => setCommentInput(e.target.value)}
+                  disabled={isPostingComment}
+                />
+                <button className="thread-submit" disabled={!commentInput.trim() || isPostingComment}>
+                  {isPostingComment ? <Loader2 size={12} className="spinning" /> : <Send size={12} />}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Color legend panel */}
+        {showLegend && (
+          <div className="legend-panel">
+            <div className="legend-header">
+              <span className="legend-title">How emotions become light</span>
+              <button className="legend-close" onClick={() => setShowLegend(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <p className="legend-subtitle">Each thought's window color is determined by its emotional theme.</p>
+            <div className="legend-list">
+              {COLOR_LEGEND.map(({ theme, color, reason }) => (
+                <div className="legend-row" key={theme}>
+                  <span className="legend-swatch" style={{ background: color }} />
+                  <div className="legend-text">
+                    <span className="legend-theme" style={{ color }}>{theme}</span>
+                    <span className="legend-reason">{reason}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="input-row">
+          <form className="input-container" onSubmit={handleSubmit}>
+            {isAnalyzing
+              ? <Loader2 className="input-icon spinning" size={20} />
+              : <MessageSquare className="input-icon" size={20} />
+            }
+            <input
+              type="text"
+              className="thought-input"
+              placeholder={isAnalyzing ? 'Building your city...' : 'Share a thought, a feeling, an emotion...'}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              disabled={isAnalyzing}
+              autoFocus
+            />
+            <button type="submit" className="submit-btn" disabled={!inputValue.trim() || isAnalyzing}>
+              <Send size={20} />
+            </button>
+          </form>
+
+          <div className="token-counter" title="Remaining thoughts allowed in this window">
+            <Zap size={14} />
+            <span>{tokenCount}</span>
+          </div>
+
+          <button
+            className={`legend-btn ${showLegend ? 'active' : ''}`}
+            onClick={() => setShowLegend(v => !v)}
+            title="How do emotions become colors?"
+          >
+            <HelpCircle size={18} />
+          </button>
+        </div>
+      </div>
+
+      <CityScene buildings={buildings} comments={comments} onSelect={setSelected} />
+    </>
+  );
+}
+
+export default App;
