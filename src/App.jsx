@@ -4,6 +4,51 @@ import CityScene from './components/CityScene';
 import { analyzeThought, getRateLimitStatus, analyzeComment, initRateLimit } from './utils/aiAnalyze';
 import { supabase } from './utils/supabase';
 
+// Helper to map camelCase building to snake_case for Supabase
+const mapBuildingForDB = (b, visitorId) => ({
+  id: b.id,
+  text: b.text,
+  label: b.label,
+  theme: b.theme,
+  secondary_theme: b.secondaryTheme,
+  height: b.height,
+  width: b.width,
+  depth: b.depth,
+  x: b.x,
+  z: b.z,
+  windowColor: b.windowColor,
+  secondary_color: b.secondaryColor,
+  mixed_ratio: b.mixedRatio,
+  windowBrightness: b.windowBrightness,
+  intensity: b.intensity,
+  valence: b.valence,
+  complexity: b.complexity,
+  visitor_id: visitorId,
+  timestamp: b.timestamp
+});
+
+// Helper to map snake_case from DB back to camelCase for the UI
+const mapDBToBuilding = (b) => ({
+  id: b.id,
+  text: b.text,
+  label: b.label,
+  theme: b.theme,
+  secondaryTheme: b.secondary_theme,
+  height: b.height,
+  width: b.width,
+  depth: b.depth,
+  x: b.x,
+  z: b.z,
+  windowColor: b.windowColor,
+  secondaryColor: b.secondary_color,
+  mixedRatio: Number(b.mixed_ratio || 0),
+  windowBrightness: b.windowBrightness,
+  intensity: b.intensity,
+  valence: b.valence,
+  complexity: b.complexity,
+  timestamp: b.timestamp || Date.now()
+});
+
 const COLOR_LEGEND = [
   { theme: 'Hopes', color: '#ffffff', reason: 'Pure white = a blank canvas, a new dawn. The color of unwritten dreams and absolute clarity.' },
   { theme: 'Ambition', color: '#ffc947', reason: 'Gold = wealth, power, achievement. The color of trophies and success.' },
@@ -56,7 +101,10 @@ function App() {
           .select('*')
           .order('timestamp', { ascending: true });
 
-        if (bData) setBuildings(bData);
+        if (bData) {
+          // Map snake_case keys back to camelCase for the frontend
+          setBuildings(bData.map(mapDBToBuilding));
+        }
 
         // Fetch All Comments
         const { data: cData } = await supabase
@@ -105,9 +153,32 @@ function App() {
 
       // Save to Supabase if available
       if (supabase) {
-        const { error } = await supabase
+        const { visitorId } = getRateLimitStatus();
+        const dbBuilding = mapBuildingForDB(newBuilding, visitorId);
+        
+        const { data, error } = await supabase
           .from('buildings')
-          .insert([newBuilding]);
+          .insert([dbBuilding]);
+        
+        if (error) {
+          console.error("Supabase Save Error (1st attempt):", error.message);
+          
+          // Try a bare-minimum insert in case columns are missing
+          const fallback = {
+            id: dbBuilding.id,
+            text: dbBuilding.text,
+            label: dbBuilding.label,
+            theme: dbBuilding.theme,
+            x: dbBuilding.x,
+            z: dbBuilding.z,
+            height: dbBuilding.height
+          };
+          
+          const { error: error2 } = await supabase.from('buildings').insert([fallback]);
+          if (error2) {
+            console.error("Supabase Save Error (Fallback failed):", error2.message);
+          }
+        }
       }
 
       setBuildings(prev => [...prev, newBuilding]);
