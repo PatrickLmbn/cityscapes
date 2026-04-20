@@ -254,6 +254,13 @@ canvas:active {
   line-height: 1.3;
 }
 
+.detail-themes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
 .detail-theme-badge {
   display: inline-block;
   font-size: 0.65rem;
@@ -263,7 +270,6 @@ canvas:active {
   border: 1px solid;
   border-radius: 99px;
   padding: 0.15rem 0.6rem;
-  margin-bottom: 0.85rem;
   opacity: 0.85;
 }
 
@@ -319,6 +325,13 @@ canvas:active {
   margin-right: 0.75rem;
 }
 
+.thought-input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .thought-input {
   flex: 1;
   background: transparent;
@@ -327,7 +340,33 @@ canvas:active {
   font-size: 1.1rem;
   font-weight: 300;
   padding: 0.75rem 0;
+  padding-right: 3.5rem; /* Space for counter */
   outline: none;
+}
+
+.char-counter {
+  position: absolute;
+  right: 0.5rem;
+  font-size: 0.65rem;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.thread-input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.char-counter--thread {
+  right: 0.2rem;
+  font-size: 0.55rem;
+  background: transparent;
 }
 
 .thought-input::placeholder {

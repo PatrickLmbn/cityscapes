@@ -1,32 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Send, Loader2, MousePointer2, ZoomIn, Hand, HelpCircle, X, Zap, Heart, Layers, AlertCircle } from 'lucide-react';
 import CityScene from './components/CityScene';
-import { analyzeThought, getRateLimitStatus, analyzeComment } from './utils/aiAnalyze';
+import { analyzeThought, getRateLimitStatus, analyzeComment, initRateLimit } from './utils/aiAnalyze';
 import { supabase } from './utils/supabase';
 
 const COLOR_LEGEND = [
-  { theme: 'Ambition',  color: '#ffc947', reason: 'Gold = wealth, power, achievement. The color of trophies and success.' },
-  { theme: 'Joy',       color: '#00ffcc', reason: 'Electric cyan = alive and energetic. The feeling of a cool breeze on a clear day.' },
-  { theme: 'Love',      color: '#ff79a8', reason: 'Soft red = intimate and warm. Not aggressive, but deeply connected to passion.' },
-  { theme: 'Peace',     color: '#88ffbb', reason: 'Soft green = nature, growth, safety. Used in meditation to reduce tension.' },
+  { theme: 'Hopes', color: '#ffffff', reason: 'Pure white = a blank canvas, a new dawn. The color of unwritten dreams and absolute clarity.' },
+  { theme: 'Ambition', color: '#ffc947', reason: 'Gold = wealth, power, achievement. The color of trophies and success.' },
+  { theme: 'Joy', color: '#00ffcc', reason: 'Electric cyan = alive and energetic. The feeling of a cool breeze on a clear day.' },
+  { theme: 'Love', color: '#ff79a8', reason: 'Soft red = intimate and warm. Not aggressive, but deeply connected to passion.' },
+  { theme: 'Peace', color: '#88ffbb', reason: 'Soft green = nature, growth, safety. Used in meditation to reduce tension.' },
   { theme: 'Nostalgia', color: '#ff9944', reason: 'Amber = old photographs, warm bulbs, sunsets. The color of the past.' },
-  { theme: 'Anxiety',   color: '#aa44ff', reason: 'Purple = tension between red (danger) and blue (sadness). Unease.' },
-  { theme: 'Sadness',   color: '#3a6ea8', reason: 'Muted blue = "feeling blue." Desaturated cool tones signal melancholy.' },
-  { theme: 'Fear',      color: '#ff6600', reason: 'Orange = warning signs & hazard tape. Dread and suspense, not outright danger.' },
-  { theme: 'Rage',      color: '#ff2233', reason: 'Bright red = raises heart rate, signals immediate danger. "Seeing red."' },
-  { theme: 'Hate',      color: '#cc0011', reason: 'Dark cold red = sustained, not explosive. Hate lingers like dried blood.' },
+  { theme: 'Anxiety', color: '#aa44ff', reason: 'Purple = tension between red (danger) and blue (sadness). Unease.' },
+  { theme: 'Sadness', color: '#3a6ea8', reason: 'Muted blue = "feeling blue." Desaturated cool tones signal melancholy.' },
+  { theme: 'Fear', color: '#ff6600', reason: 'Orange = warning signs & hazard tape. Dread and suspense, not outright danger.' },
+  { theme: 'Rage', color: '#ff2233', reason: 'Bright red = raises heart rate, signals immediate danger. "Seeing red."' },
+  { theme: 'Hate', color: '#cc0011', reason: 'Dark cold red = sustained, not explosive. Hate lingers like dried blood.' },
 ];
 
+const MAX_CHARS = 140;
+
 function App() {
-  const [buildings, setBuildings]     = useState([]);
-  const [inputValue, setInputValue]   = useState('');
+  const [buildings, setBuildings] = useState([]);
+  const [inputValue, setInputValue] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showHint, setShowHint]       = useState(true);
-  const [showLegend, setShowLegend]   = useState(false);
-  const [selected, setSelected]       = useState(null);
-  const [rateMsg, setRateMsg]         = useState(null);
-  const [tokenCount, setTokenCount]   = useState(getRateLimitStatus().tokens);
-  const [comments, setComments]       = useState([]);
+  const [showHint, setShowHint] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [rateMsg, setRateMsg] = useState(null);
+  const [tokenCount, setTokenCount] = useState(getRateLimitStatus().tokens);
+  const [comments, setComments] = useState([]);
   const [commentInput, setCommentInput] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
 
@@ -38,7 +41,7 @@ function App() {
 
   // Filter comments for the selected building in the UI
   const activeComments = comments.filter(c => c.building_id === selected?.id);
-  
+
   // Fetch comments logic removed from local useEffect, handled by global comments prop now
   // (We'll just rely on the prop 'comments' filtered above)
 
@@ -52,7 +55,7 @@ function App() {
           .from('buildings')
           .select('*')
           .order('timestamp', { ascending: true });
-        
+
         if (bData) setBuildings(bData);
 
         // Fetch All Comments
@@ -60,7 +63,7 @@ function App() {
           .from('comments')
           .select('*')
           .order('timestamp', { ascending: true });
-        
+
         if (cData) setComments(cData);
         return;
       }
@@ -71,8 +74,17 @@ function App() {
         try { setBuildings(JSON.parse(saved)); } catch (e) { console.error(e); }
       }
     }
-    
+
     loadData();
+    // Sync rate limit with IP/Supabase
+    initRateLimit().then(status => setTokenCount(status.tokens));
+
+    // Update token count every 2 seconds to show refills
+    const tokenTimer = setInterval(() => {
+      setTokenCount(getRateLimitStatus().tokens);
+    }, 2000);
+
+    return () => clearInterval(tokenTimer);
   }, []);
 
   // Persist city to local storage
@@ -89,14 +101,14 @@ function App() {
     setInputValue('');
     setIsAnalyzing(true);
     try {
-      const newBuilding = await analyzeThought(text);
-      
+      const newBuilding = await analyzeThought(text, buildings.length);
+
       // Save to Supabase if available
       if (supabase) {
         const { error } = await supabase
           .from('buildings')
           .insert([newBuilding]);
-        
+
         if (error) console.error("Supabase insert error:", error);
       }
 
@@ -139,9 +151,10 @@ function App() {
         .from('comments')
         .insert([newComment])
         .select();
-      
+
       if (!error && data) {
         setComments(prev => [...prev, ...data]);
+        setTokenCount(getRateLimitStatus().tokens);
       }
     } catch (err) {
       console.error("Failed to post comment:", err);
@@ -152,7 +165,7 @@ function App() {
 
   const timeAgo = (ts) => {
     const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60)   return 'just now';
+    if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
@@ -188,9 +201,16 @@ function App() {
             <div className="detail-label" style={{ color: selected.windowColor }}>
               {selected.label}
             </div>
-            <span className="detail-theme-badge" style={{ borderColor: selected.windowColor + '66', color: selected.windowColor }}>
-              {selected.theme}
-            </span>
+            <div className="detail-themes">
+              <span className="detail-theme-badge" style={{ borderColor: selected.windowColor + '66', color: selected.windowColor }}>
+                {selected.theme}
+              </span>
+              {selected.secondaryTheme && (
+                <span className="detail-theme-badge" style={{ borderColor: selected.secondaryColor + '66', color: selected.secondaryColor }}>
+                  {selected.secondaryTheme}
+                </span>
+              )}
+            </div>
 
             <p className="detail-text">"{selected.text}"</p>
 
@@ -231,15 +251,21 @@ function App() {
                   ))
                 )}
               </div>
-              
+
               <form className="thread-form" onSubmit={handlePostComment}>
-                <input 
-                  className="thread-input"
-                  placeholder="Reply to this thought..."
-                  value={commentInput}
-                  onChange={e => setCommentInput(e.target.value)}
-                  disabled={isPostingComment}
-                />
+                <div className="thread-input-wrapper">
+                  <input
+                    className="thread-input"
+                    placeholder="Reply to this thought..."
+                    value={commentInput}
+                    onChange={e => setCommentInput(e.target.value)}
+                    disabled={isPostingComment}
+                    maxLength={MAX_CHARS}
+                  />
+                  <div className="char-counter char-counter--thread">
+                    {commentInput.length}/{MAX_CHARS}
+                  </div>
+                </div>
                 <button className="thread-submit" disabled={!commentInput.trim() || isPostingComment}>
                   {isPostingComment ? <Loader2 size={12} className="spinning" /> : <Send size={12} />}
                 </button>
@@ -278,15 +304,21 @@ function App() {
               ? <Loader2 className="input-icon spinning" size={20} />
               : <MessageSquare className="input-icon" size={20} />
             }
-            <input
-              type="text"
-              className="thought-input"
-              placeholder={isAnalyzing ? 'Building your city...' : 'Share a thought, a feeling, an emotion...'}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              disabled={isAnalyzing}
-              autoFocus
-            />
+            <div className="thought-input-wrapper">
+              <input
+                type="text"
+                className="thought-input"
+                placeholder={isAnalyzing ? 'Building your city...' : 'Share a thought, a feeling, an emotion...'}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isAnalyzing}
+                autoFocus
+                maxLength={MAX_CHARS}
+              />
+              <div className="char-counter">
+                {inputValue.length}/{MAX_CHARS}
+              </div>
+            </div>
             <button type="submit" className="submit-btn" disabled={!inputValue.trim() || isAnalyzing}>
               <Send size={20} />
             </button>

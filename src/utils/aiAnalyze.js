@@ -6,14 +6,93 @@ const MODEL   = import.meta.env.VITE_MODEL || 'google/gemini-2.5-flash-lite';
 // ── Rate limiter (token bucket) ──────────────────────────
 // Max 5 submissions per 60-second window.
 const RATE_LIMIT    = 5;
-const WINDOW_MS     = 60_000;           // 1 minute
-const REFILL_MS     = WINDOW_MS / RATE_LIMIT; // 12 s per token
+const WINDOW_MS     = 300_000;          // 5 minutes for a full refill
+const REFILL_MS     = 60_000;           // 1 minute per token
 
-let tokens        = RATE_LIMIT;
-let lastRefill    = Date.now();
+let tokens        = parseInt(localStorage.getItem('cityscapes-tokens')) || RATE_LIMIT;
+let lastRefill    = parseInt(localStorage.getItem('cityscapes-last-refill')) || Date.now();
+let cachedVisitorId = null;
 
-function consumeToken() {
-  // Refill tokens based on elapsed time
+/**
+ * Gets or creates a persistent Visitor ID for this browser.
+ */
+function getVisitorId() {
+  if (cachedVisitorId) return cachedVisitorId;
+  let id = localStorage.getItem('cityscapes-visitor-id');
+  if (!id) {
+    id = uuidv4();
+    localStorage.setItem('cityscapes-visitor-id', id);
+  }
+  cachedVisitorId = id;
+  return id;
+}
+
+/**
+ * Syncs the local token count with Supabase based on Visitor ID.
+ */
+async function syncTokens(delta = 0) {
+  const { supabase } = await import('./supabase');
+  if (!supabase) return;
+
+  const visitorId = getVisitorId();
+  
+  // Try to get existing record
+  const { data, error } = await supabase
+    .from('visitor_limits')
+    .select('tokens, last_refill')
+    .eq('visitor_id', visitorId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.warn('[AI Rate Limit] Sync error:', error);
+  }
+
+  let currentTokens = tokens;
+  let currentRefill = lastRefill;
+
+  if (data) {
+    currentTokens = typeof data.tokens === 'number' ? data.tokens : currentTokens;
+    currentRefill = data.last_refill ? Number(data.last_refill) : currentRefill;
+    console.log(`[AI Rate Limit] Sync from DB: ${currentTokens} tokens (ID: ${visitorId.slice(0,8)}...)`);
+  }
+
+  // Refill tokens based on elapsed time since DB's last refill
+  const now     = Date.now();
+  const elapsed = Math.max(0, now - currentRefill);
+  const gained  = Math.floor(elapsed / REFILL_MS);
+  
+  if (gained > 0) {
+    currentTokens = Math.min(RATE_LIMIT, currentTokens + gained);
+    currentRefill = now - (elapsed % REFILL_MS);
+  }
+
+  // Apply the change (delta is usually -1)
+  currentTokens = Math.max(0, currentTokens + delta);
+  
+  try {
+    // Persist back to Supabase
+    if (supabase) {
+      const { error: upsertError } = await supabase.from('visitor_limits').upsert({ 
+        visitor_id: visitorId, 
+        tokens: currentTokens, 
+        last_refill: currentRefill,
+        updated_at: new Date().toISOString()
+      });
+      if (upsertError) console.warn('[AI Rate Limit] Save error:', upsertError);
+    }
+
+    // Update local state and localStorage for immediate persistence
+    tokens = currentTokens;
+    lastRefill = currentRefill;
+    localStorage.setItem('cityscapes-tokens', currentTokens);
+    localStorage.setItem('cityscapes-last-refill', currentRefill);
+  } catch (err) {
+    console.error('[AI Rate Limit] Fatal sync error:', err);
+  }
+}
+
+async function consumeToken() {
+  // Always do a quick local check first for speed
   const now     = Date.now();
   const elapsed = now - lastRefill;
   const gained  = Math.floor(elapsed / REFILL_MS);
@@ -22,16 +101,22 @@ function consumeToken() {
     lastRefill = now - (elapsed % REFILL_MS);
   }
 
+  // If local tokens are already empty, throw early
   if (tokens <= 0) {
-    const waitMs  = REFILL_MS - (Date.now() - lastRefill);
-    const waitSec = Math.ceil(waitMs / 1000);
-    const err     = new Error(`Rate limit reached. Try again in ${waitSec} second${waitSec !== 1 ? 's' : ''}.`);
-    err.name      = 'RateLimitError';
-    err.waitSec   = waitSec;
-    throw err;
+    // Double check with server to be sure (maybe enough time passed)
+    await syncTokens(0); 
+    if (tokens <= 0) {
+      const waitMs  = REFILL_MS - (Date.now() - lastRefill);
+      const waitSec = Math.ceil(waitMs / 1000);
+      const err     = new Error(`Rate limit reached. Try again in ${waitSec} second${waitSec !== 1 ? 's' : ''}.`);
+      err.name      = 'RateLimitError';
+      err.waitSec   = waitSec;
+      throw err;
+    }
   }
 
-  tokens -= 1;
+  // Decrement locally and sync to server
+  await syncTokens(-1); 
 }
 
 export function getRateLimitStatus() {
@@ -44,12 +129,22 @@ export function getRateLimitStatus() {
 }
 
 /**
+ * Initializes the rate limit by syncing with Supabase.
+ */
+export async function initRateLimit() {
+  await syncTokens(0);
+  const status = getRateLimitStatus();
+  console.log('[AI Rate Limit] Initialized:', status);
+  return status;
+}
+
+/**
  * Calls Gemini via OpenRouter to analyze the user's thought.
  * Returns structured JSON with building parameters.
  */
-export async function analyzeThought(text) {
+export async function analyzeThought(text, buildingCount = 0) {
   // Throws RateLimitError if over limit — caller should catch and surface to user
-  consumeToken();
+  await consumeToken();
 
   const prompt = `
 You are an emotion and thought analysis engine for a noir cityscape app called CityScapes.
@@ -58,7 +153,8 @@ Given the user's text, return ONLY a valid JSON object with the following fields
 - intensity (number 1-10): How emotionally strong or powerful the thought is. A mild passing thought is 1-2, a deep rage or massive ambition is 9-10.
 - valence (number 1-10): 1 = very dark/negative (rage, grief, despair), 10 = very positive/hopeful (joy, love, ambition).
 - complexity (number 1-10): 1 = simple/single feeling, 10 = chaotic/multi-layered emotions.
-- theme (string): one of: "ambition", "rage", "sadness", "joy", "anxiety", "love", "nostalgia", "peace", "fear", "hate".
+- theme (string): primary emotional theme (one of the themes above).
+- secondaryTheme (string or null): a second theme if the emotion is mixed or complex (one of the themes above).
 - label (string): a short 2-5 word poetic label for this building. e.g. "Tower of Desire", "Monument of Grief".
 
 User thought: "${text.replace(/"/g, "'")}"
@@ -87,7 +183,7 @@ Respond ONLY with the JSON object. No explanation, no markdown, no code block.
     const cleaned = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(cleaned);
 
-    return buildFromAnalysis(text, parsed);
+    return buildFromAnalysis(text, parsed, buildingCount);
   } catch (err) {
     console.error('AI analysis failed, using fallback:', err);
     return buildFallback(text);
@@ -98,7 +194,7 @@ Respond ONLY with the JSON object. No explanation, no markdown, no code block.
  * Analyzes a comment to determine its sentiment for building growth.
  */
 export async function analyzeComment(text) {
-  consumeToken();
+  await consumeToken();
 
   const prompt = `
 Critically analyze the sentiment of this reply message.
@@ -149,8 +245,12 @@ Respond with ONLY JSON. No explanation.
 /**
  * Maps AI analysis to building parameters.
  */
-function buildFromAnalysis(text, analysis) {
-  const { intensity = 5, valence = 5, complexity = 5, theme = 'peace', label = 'Structure' } = analysis;
+function buildFromAnalysis(text, analysis, buildingCount = 0) {
+  const { intensity = 5, valence = 5, complexity = 5, theme = 'peace', secondaryTheme = null, label = 'Structure' } = analysis;
+
+  // Mixed emotions logic
+  // If complexity is high, we mix in the secondary theme
+  const mixedRatio = complexity > 4 ? (complexity - 3) * 0.12 : 0; // up to ~0.8 mix
 
   // Height is driven by intensity (1-10 → 4 to 50 units)
   const height = 4 + (intensity - 1) * 5.1;
@@ -174,14 +274,20 @@ function buildFromAnalysis(text, analysis) {
     peace:     '#88ffbb',  // soft green
     fear:      '#ff6600',  // orange
     hate:      '#cc0011',  // deep red
+    hopes:     '#ffffff',  // white
   };
   const windowColor = themeWindows[theme] || '#ffea00';
+  const secondaryColor = secondaryTheme ? (themeWindows[secondaryTheme] || windowColor) : windowColor;
 
   // Dark emotions (valence < 4) → spawn close to center
   // Bright emotions → spawn further out
   const closeness = Math.max(0, (5 - valence) / 5); // 0 far, 1 very close
-  const minR = 5 + ((1 - closeness) * 15);
-  const maxR = minR + (complexity * 2) + 10;
+  
+  // Base radius expands as the city grows
+  const expansionOffset = Math.sqrt(buildingCount) * 6; 
+  
+  const minR = 5 + ((1 - closeness) * 15) + expansionOffset;
+  const maxR = minR + (complexity * 2) + 10 + (expansionOffset * 0.5);
   const r = minR + Math.random() * (maxR - minR);
   const theta = Math.random() * 2 * Math.PI;
 
@@ -190,10 +296,13 @@ function buildFromAnalysis(text, analysis) {
     text,
     label,
     theme,
+    secondaryTheme,
     height,
     width,
     depth,
     windowColor,
+    secondaryColor,
+    mixedRatio,
     windowBrightness,
     floors: Math.floor(height / 3.5), // one floor per ~3.5 units
     intensity,

@@ -7,6 +7,8 @@ import * as THREE from 'three';
 const BuildingShader = {
   uniforms: {
     uWindowColor: { value: new THREE.Color('#ffffff') },
+    uSecondaryColor: { value: new THREE.Color('#ffffff') },
+    uMixedRatio: { value: 0.0 }, // 0 = only primary, 1 = only secondary
     uEmissiveIntensity: { value: 1.0 },
     uFloors: { value: 10.0 },
     uCols: { value: 6.0 },
@@ -24,6 +26,8 @@ const BuildingShader = {
   `,
   fragmentShader: `
     uniform vec3 uWindowColor;
+    uniform vec3 uSecondaryColor;
+    uniform float uMixedRatio;
     uniform float uEmissiveIntensity;
     uniform float uFloors;
     uniform float uCols;
@@ -61,8 +65,17 @@ const BuildingShader = {
 
       if (inWindow) {
         if (isLit) {
-          finalColor = uWindowColor;
-          emissive = uWindowColor * uEmissiveIntensity;
+          // Mixed emotion logic: Alternate colors based on windowId
+          vec3 baseColor = uWindowColor;
+          if (uMixedRatio > 0.05) {
+            // Use another hash for color selection
+            float colorId = hash(row * 33.1 + col * 97.4 + uSeed * 2.5);
+            if (colorId < uMixedRatio) {
+              baseColor = uSecondaryColor;
+            }
+          }
+          finalColor = baseColor;
+          emissive = baseColor * uEmissiveIntensity;
         } else {
           finalColor = vec3(0.035); // Dark unlit glass
         }
@@ -78,7 +91,7 @@ const BuildingShader = {
   `
 };
 
-function BuildingPart({ width, height, depth, floors, color, seed, emissiveIntensity, onClick, onPointerOver, onPointerOut }) {
+function BuildingPart({ width, height, depth, floors, color, secondaryColor, mixedRatio = 0, seed, emissiveIntensity, onClick, onPointerOver, onPointerOut }) {
   // We use the same shader material but unique uniforms per building part
   const material = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -91,12 +104,14 @@ function BuildingPart({ width, height, depth, floors, color, seed, emissiveInten
   // Update uniforms
   useMemo(() => {
     material.uniforms.uWindowColor.value.set(color);
+    material.uniforms.uSecondaryColor.value.set(secondaryColor || color);
+    material.uniforms.uMixedRatio.value = mixedRatio;
     material.uniforms.uEmissiveIntensity.value = emissiveIntensity;
     material.uniforms.uFloors.value = floors;
     material.uniforms.uCols.value = Math.max(3, Math.round(width / 0.8));
     material.uniforms.uSeed.value = seed;
     material.uniforms.uDimensions.value.set(width, height);
-  }, [material, color, emissiveIntensity, floors, width, height, seed]);
+  }, [material, color, secondaryColor, mixedRatio, emissiveIntensity, floors, width, height, seed]);
 
   // Top material (simple dark concrete)
   const topMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#080808' }), []);
@@ -116,7 +131,7 @@ function BuildingPart({ width, height, depth, floors, color, seed, emissiveInten
 }
 
 export default function Building({ data, comments = [], onSelect }) {
-  const { width, height, depth, x, z, windowColor, windowBrightness, floors, intensity, id } = data;
+  const { width, height, depth, x, z, windowColor, windowBrightness, floors, intensity, id, secondaryColor, mixedRatio } = data;
 
   const seed = useMemo(() => {
     let s = 0;
@@ -133,7 +148,9 @@ export default function Building({ data, comments = [], onSelect }) {
       <group position={[0, height / 2, 0]}>
         <BuildingPart 
           width={width} height={height} depth={depth} 
-          floors={floors} color={windowColor} seed={seed} 
+          floors={floors} color={windowColor} 
+          secondaryColor={secondaryColor} mixedRatio={mixedRatio}
+          seed={seed} 
           emissiveIntensity={eI} 
           onClick={(e) => { e.stopPropagation(); onSelect(data); }}
           onPointerOver={() => (document.body.style.cursor = 'pointer')}

@@ -16,7 +16,7 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
         <color attach="background" args={['#010108']} />
         
         {/* Light fog — just enough to fade distant buildings, not swallow them */}
-        <fog attach="fog" args={['#010108', 80, 220]} />
+        <fog attach="fog" args={['#010108', 120, 500]} />
 
         {/* Stars in the sky */}
         <Stars radius={120} depth={60} count={2000} factor={3} saturation={0} fade speed={0.4} />
@@ -41,7 +41,7 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
 
         {/* Ground — wet tarmac look */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-          <planeGeometry args={[400, 400, 32, 32]} />
+          <planeGeometry args={[2000, 2000]} />
           <meshStandardMaterial
             color="#070710"
             roughness={0.4}
@@ -51,7 +51,7 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
 
         {/* Grid lines on the ground for city block feeling */}
         <gridHelper
-          args={[200, 40, '#1a1a2e', '#0d0d1a']}
+          args={[2000, 100, '#1a1a2e', '#0d0d1a']}
           position={[0, 0.01, 0]}
         />
 
@@ -80,7 +80,7 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
           enableRotate={true}
           maxPolarAngle={Math.PI / 2 - 0.04}
           minDistance={8}
-          maxDistance={200}
+          maxDistance={500}
           target={[0, 5, 0]}
         />
       </Canvas>
