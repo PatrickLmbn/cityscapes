@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     allowedHosts: ['cityvoid.patricklmbn.online'],
-    port: 5111
+    port: 5111,
+    hmr: {
+      host: 'cityvoid.patricklmbn.online',
+      protocol: 'wss',
+      clientPort: 443
+    }
   }
 })
