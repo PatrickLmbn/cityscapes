@@ -65,6 +65,46 @@ canvas:active {
 }
 
 /* Input row — form + ? button side by side */
+.avatar-selection {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+  padding-left: 0.5rem;
+  pointer-events: auto; /* Enable interaction! */
+}
+
+.avatar-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.4);
+  font-weight: 700;
+}
+
+.avatar-select {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.avatar-select:hover, .avatar-select:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.avatar-select option {
+  background: #111;
+  color: white;
+}
+
 .input-row {
   width: 100%;
   max-width: 660px;
@@ -428,8 +468,9 @@ canvas:active {
   gap: 0.5rem;
   font-size: 0.72rem;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.65);
   text-transform: uppercase;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 
 /* Rate limited Toast */

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { MapControls, Stars } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import Building from './Building';
 
@@ -8,18 +9,28 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <Canvas
-        shadows
-        dpr={[1, 2]}
+        shadows="basic" // Use basic shadows instead of PCF
+        dpr={[1, 1]} // Lock to 1x pixel ratio for max performance
         camera={{ position: [30, 25, 50], fov: 42 }}
-        gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
+        gl={{ 
+          antialias: false, // Disable antialiasing for performance
+          alpha: false, 
+          toneMapping: THREE.ACESFilmicToneMapping, 
+          toneMappingExposure: 1.2,
+          powerPreference: "high-performance",
+          stencil: false, // Disable stencil buffer
+          depth: true
+        }}
+        frameloop="demand" // Only render when needed
+        performance={{ min: 0.1 }} // Allow aggressive frame rate drops
       >
         <color attach="background" args={['#010108']} />
         
-        {/* Light fog — just enough to fade distant buildings, not swallow them */}
-        <fog attach="fog" args={['#010108', 120, 500]} />
+        {/* Light fog for atmosphere */}
+        <fog attach="fog" args={['#010108', 150, 600]} />
 
-        {/* Stars in the sky */}
-        <Stars radius={120} depth={60} count={2000} factor={3} saturation={0} fade speed={0.4} />
+        {/* Reduced stars for performance */}
+        <Stars radius={100} depth={50} count={800} factor={2.5} saturation={0} fade speed={0.3} />
 
         {/* Scene ambient — very dim, just enough to outline the building body */}
         <ambientLight intensity={0.12} color="#1a2a4a" />
@@ -30,28 +41,24 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
           position={[60, 80, -40]}
           intensity={0.35}
           color="#4466aa"
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[512, 512]}
           shadow-camera-near={1}
-          shadow-camera-far={300}
-          shadow-camera-left={-100}
-          shadow-camera-right={100}
-          shadow-camera-top={100}
-          shadow-camera-bottom={-100}
+          shadow-camera-far={200}
+          shadow-camera-left={-50}
+          shadow-camera-right={50}
+          shadow-camera-top={50}
+          shadow-camera-bottom={-50}
         />
 
         {/* Ground — wet tarmac look */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-          <planeGeometry args={[2000, 2000]} />
-          <meshStandardMaterial
-            color="#070710"
-            roughness={0.4}
-            metalness={0.6}
-          />
+          <planeGeometry args={[2000, 2000, 1, 1]} />
+          <meshBasicMaterial color="#070710" />
         </mesh>
 
-        {/* Grid lines on the ground for city block feeling */}
+        {/* Simplified grid */}
         <gridHelper
-          args={[2000, 100, '#1a1a2e', '#0d0d1a']}
+          args={[2000, 20, '#1a1a2e', '#0d0d1a']}
           position={[0, 0.01, 0]}
         />
 
@@ -74,15 +81,26 @@ export default function CityScene({ buildings, comments = [], onSelect }) {
           />
         ))}
 
-        <OrbitControls
+        <MapControls
           enablePan={true}
           enableZoom={true}
           enableRotate={true}
           maxPolarAngle={Math.PI / 2 - 0.04}
           minDistance={8}
           maxDistance={500}
-          target={[0, 5, 0]}
+          enableDamping={false}
+          makeDefault
         />
+
+        {/* Lightweight bloom - optimized for performance */}
+        <EffectComposer disableNormalPass multisampling={0}>
+          <Bloom 
+            luminanceThreshold={0.9}
+            intensity={0.5}
+            levels={3}
+            mipmapBlur
+          />
+        </EffectComposer>
       </Canvas>
     </div>
   );

@@ -11,6 +11,7 @@ const mapBuildingForDB = (b, visitorId) => ({
   label: b.label,
   theme: b.theme,
   secondary_theme: b.secondaryTheme,
+  avatar_type: b.avatarType || 'building',
   height: b.height,
   width: b.width,
   depth: b.depth,
@@ -34,6 +35,7 @@ const mapDBToBuilding = (b) => ({
   label: b.label,
   theme: b.theme,
   secondaryTheme: b.secondary_theme,
+  avatarType: b.avatar_type || 'building',
   height: b.height,
   width: b.width,
   depth: b.depth,
@@ -77,10 +79,19 @@ function App() {
   const [comments, setComments] = useState([]);
   const [commentInput, setCommentInput] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const [avatar, setAvatar] = useState('building');
+
+  const AVATARS = [
+    { id: 'building', label: 'Building', icon: Layers },
+    { id: 'person', label: 'Person', icon: Heart },
+    { id: 'car', label: 'Car', icon: Zap },
+    { id: 'stoplight', label: 'Stoplight', icon: AlertCircle },
+    { id: 'lamp', label: 'Lamp Post', icon: MousePointer2 }
+  ];
 
   // Auto-hide controls hint after 6 s
   useEffect(() => {
-    const t = setTimeout(() => setShowHint(false), 6000);
+    const t = setTimeout(() => setShowHint(false), 12000);
     return () => clearTimeout(t);
   }, []);
 
@@ -150,6 +161,7 @@ function App() {
     setIsAnalyzing(true);
     try {
       const newBuilding = await analyzeThought(text, buildings.length);
+      newBuilding.avatarType = avatar;
 
       // Save to Supabase if available
       if (supabase) {
@@ -251,9 +263,9 @@ function App() {
 
         {/* Controls hint */}
         <div className={`controls-hint ${showHint ? 'visible' : ''}`}>
-          <div className="hint-item"><MousePointer2 size={13} /> Drag to rotate</div>
-          <div className="hint-item"><Hand size={13} /> Right-drag to pan</div>
-          <div className="hint-item"><ZoomIn size={13} /> Scroll to zoom</div>
+          <div className="hint-item"><Hand size={13} /> Left-Click + Drag to Move City</div>
+          <div className="hint-item"><MousePointer2 size={13} /> Right-Click + Drag to Rotate View</div>
+          <div className="hint-item"><ZoomIn size={13} /> Scroll to Zoom In/Out</div>
         </div>
 
         {/* Rate limit toast */}
@@ -375,6 +387,19 @@ function App() {
             </div>
           </div>
         )}
+
+        <div className="avatar-selection">
+          <label className="avatar-label">Manifest As</label>
+          <select 
+            className="avatar-select"
+            value={avatar}
+            onChange={(e) => setAvatar(e.target.value)}
+          >
+            {AVATARS.map(a => (
+              <option key={a.id} value={a.id}>{a.label}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="input-row">
           <form className="input-container" onSubmit={handleSubmit}>

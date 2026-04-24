@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 const API_KEY = import.meta.env.VITE_OR_KEY;
-const MODEL   = import.meta.env.VITE_MODEL || 'google/gemini-2.5-flash-lite';
+const MODEL   = import.meta.env.VITE_MODEL || 'openrouter/free';
 
 // ── Rate limiter (token bucket) ──────────────────────────
 // Max 5 submissions per 60-second window.
