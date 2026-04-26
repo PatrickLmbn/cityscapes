@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Send, Loader2, MousePointer2, ZoomIn, Hand, HelpCircle, X, Zap, Heart, Layers, AlertCircle } from 'lucide-react';
+import { MessageSquare, Send, Loader2, MousePointer2, ZoomIn, Hand, HelpCircle, X, Zap, Heart, Layers, AlertCircle, Edit3 } from 'lucide-react';
 import CityScene from './components/CityScene';
 import { analyzeThought, getRateLimitStatus, analyzeComment, initRateLimit } from './utils/aiAnalyze';
 import { supabase } from './utils/supabase';
@@ -80,6 +80,7 @@ function App() {
   const [commentInput, setCommentInput] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [avatar, setAvatar] = useState('building');
+  const [isInputActive, setIsInputActive] = useState(false);
 
   const AVATARS = [
     { id: 'building', label: 'Building', icon: Layers },
@@ -203,6 +204,7 @@ function App() {
       }
     } finally {
       setIsAnalyzing(false);
+      setIsInputActive(false); // Close after successful submission
     }
   };
 
@@ -395,45 +397,15 @@ function App() {
           </div>
         )}
 
-        <div className="avatar-selection">
-          <label className="avatar-label">Manifest As</label>
-          <select 
-            className="avatar-select"
-            value={avatar}
-            onChange={(e) => setAvatar(e.target.value)}
-          >
-            {AVATARS.map(a => (
-              <option key={a.id} value={a.id}>{a.label}</option>
-            ))}
-          </select>
-        </div>
+        {/* Mobile Pencil Trigger */}
+        <button 
+          className={`mobile-input-trigger ${isInputActive ? 'hidden' : ''}`}
+          onClick={() => setIsInputActive(true)}
+        >
+          <Edit3 size={24} />
+        </button>
 
-        <div className="input-row">
-          <form className="input-container" onSubmit={handleSubmit}>
-            {isAnalyzing
-              ? <Loader2 className="input-icon spinning" size={20} />
-              : <MessageSquare className="input-icon" size={20} />
-            }
-            <div className="thought-input-wrapper">
-              <input
-                type="text"
-                className="thought-input"
-                placeholder={isAnalyzing ? 'Building your city...' : 'Share a thought, a feeling, an emotion...'}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                disabled={isAnalyzing}
-                autoFocus
-                maxLength={MAX_CHARS}
-              />
-              <div className="char-counter">
-                {inputValue.length}/{MAX_CHARS}
-              </div>
-            </div>
-            <button type="submit" className="submit-btn" disabled={!inputValue.trim() || isAnalyzing}>
-              <Send size={20} />
-            </button>
-          </form>
-
+        <div className={`mobile-utility-cluster ${isInputActive ? 'hidden' : ''}`}>
           <div className="token-counter" title={`Visitor ID: ${getRateLimitStatus().visitorId || 'Loading...'}\nYour limit persists across refreshes.`}>
             <Zap size={14} />
             <span>{tokenCount}</span>
@@ -446,6 +418,69 @@ function App() {
           >
             <HelpCircle size={18} />
           </button>
+        </div>
+
+        <div className={`input-section-container ${isInputActive ? 'active' : ''}`}>
+          {isInputActive && (
+            <button className="input-close-mobile" onClick={() => setIsInputActive(false)}>
+              <X size={20} />
+            </button>
+          )}
+
+          <div className="avatar-selection">
+            <label className="avatar-label">Manifest As</label>
+            <select 
+              className="avatar-select"
+              value={avatar}
+              onChange={(e) => setAvatar(e.target.value)}
+            >
+              {AVATARS.map(a => (
+                <option key={a.id} value={a.id}>{a.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="input-row">
+            <form className="input-container" onSubmit={handleSubmit}>
+              {isAnalyzing
+                ? <Loader2 className="input-icon spinning" size={20} />
+                : <MessageSquare className="input-icon" size={20} />
+              }
+              <div className="thought-input-wrapper">
+                <input
+                  type="text"
+                  className="thought-input"
+                  placeholder={isAnalyzing ? 'Building your city...' : 'Share a thought...'}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  disabled={isAnalyzing}
+                  autoFocus={isInputActive}
+                  maxLength={MAX_CHARS}
+                />
+                <div className="char-counter">
+                  {inputValue.length}/{MAX_CHARS}
+                </div>
+              </div>
+              <button type="submit" className="submit-btn" disabled={!inputValue.trim() || isAnalyzing}>
+                <Send size={20} />
+              </button>
+            </form>
+
+            <div className="desktop-utility-cluster">
+              <div className="token-counter" title={`Visitor ID: ${getRateLimitStatus().visitorId || 'Loading...'}\nYour limit persists across refreshes.`}>
+                <Zap size={14} />
+                <span>{tokenCount}</span>
+              </div>
+
+              <button
+                className={`legend-btn ${showLegend ? 'active' : ''}`}
+                onClick={() => setShowLegend(v => !v)}
+                title="How do emotions become colors?"
+              >
+                <HelpCircle size={18} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

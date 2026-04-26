@@ -9,11 +9,6 @@ export default defineConfig({
     port: 5111,
     host: true,
     cors: true,
-    hmr: {
-      host: 'cityvoid.patricklmbn.online',
-      protocol: 'wss',
-      clientPort: 443,
-      port: 5111 
-    }
+    hmr: false
   }
 })
