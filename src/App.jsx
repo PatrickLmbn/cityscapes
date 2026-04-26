@@ -316,10 +316,17 @@ function App() {
                 </div>
                 <span className="stat-val">{selected.valence}/10</span>
               </div>
-              <div className="detail-stat detail-stat--inline">
-                <Layers size={11} style={{ color: selected.windowColor }} />
-                <span>{selected.floors} floors · {timeAgo(selected.timestamp)}</span>
-              </div>
+              {selected.avatarType === 'building' && (
+                <div className="detail-stat detail-stat--inline">
+                  <Layers size={11} style={{ color: selected.windowColor }} />
+                  <span>{selected.floors} floors · {timeAgo(selected.timestamp)}</span>
+                </div>
+              )}
+              {selected.avatarType !== 'building' && (
+                <div className="detail-stat detail-stat--inline">
+                  <span>{timeAgo(selected.timestamp)}</span>
+                </div>
+              )}
             </div>
 
             <div className="thread-section">
